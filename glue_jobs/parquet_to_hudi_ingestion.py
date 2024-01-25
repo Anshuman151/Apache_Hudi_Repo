@@ -11,14 +11,7 @@ args = getResolvedOptions(sys.argv, ['JOB_NAME'])
 
 sc = SparkContext()
 glueContext = GlueContext(sc)
-spark = glueContext.spark_session.builder \
-        .config('spark.jars.packages','org.apache.hudi:hudi-spark3.3-bundle_2.12:0.14.1') \
-        .config('spark.serializer','org.apache.spark.serializer.KryoSerializer') \
-        .config('spark.sql.extensions','org.apache.spark.sql.hudi.HoodieSparkSessionExtension') \
-        .config('spark.sql.catalog.glue_catalog','org.apache.spark.sql.hudi.catalog.HoodieCatalog') \
-        .config('spark.kryo.registrator','org.apache.spark.HoodieSparkKryoRegistrar') \
-        .config('spark.sql.hive.convertMetastoreParquet','false') \
-        .getOrCreate()
+spark = glueContext.spark_session
 job = Job(glueContext)
 job.init(args['JOB_NAME'], args)
 
@@ -28,12 +21,17 @@ df1 = spark.read.format('parquet').load('s3://hivedatabucket/Source/Accounts/acc
 df2= df1.withColumn('ts', lit(datetime.now()))
 #df2.show(10)
 hudi_options = {
-    'hoodie.database.name': 'hudi_db',
     'hoodie.table.name': 'accounts_hudi',
+    "hoodie.datasource.write.storage.type": "COPY_ON_WRITE",
     'hoodie.datasource.write.recordkey.field': 'account_id',
     'hoodie.datasource.write.table.name': 'accounts_hudi',
     'hoodie.datasource.write.operation': 'bulk_insert',
-    'hoodie.datasource.write.precombine.field': 'ts'
+    'hoodie.datasource.write.precombine.field': 'ts',
+    "hoodie.datasource.write.hive_style_partitioning": "true",
+    "hoodie.datasource.hive_sync.enable": "true",
+    "hoodie.datasource.hive_sync.database": "hudi_db",
+    "hoodie.datasource.hive_sync.table": "accounts_hudi",
+    "hoodie.datasource.hive_sync.mode" : "hms"
 }
 df2.write.format('hudi').options(**hudi_options).mode('overwrite').save('s3://dbt-hudi-glue/Target/accounts_hudi')
 job.commit()
